@@ -2,7 +2,6 @@ from . import nn, rl, util, RaggedArray, ContinuousSpace, FiniteSpace, optim, th
 import numpy as np
 from contextlib import contextmanager
 import theano; from theano import tensor
-
 from scipy.optimize import fmin_l_bfgs_b
 
 

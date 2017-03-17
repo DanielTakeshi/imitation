@@ -10,7 +10,7 @@ num_trials = 50
 
 print 'Name & Random policy performance'
 
-names = ['CartPole-v0', 'Acrobot-v0', 'MountainCar-v0', 'Reacher-v1', 'HalfCheetah-v1', 'Hopper-v1', 'Walker2d-v1', 'Ant-v1', 'Humanoid-v1']
+names = ['CartPole-v0', 'Acrobot-v1', 'MountainCar-v0', 'Reacher-v1', 'HalfCheetah-v1', 'Hopper-v1', 'Walker2d-v1', 'Ant-v1', 'Humanoid-v1']
 for env_name in names:
     env = envs.make(env_name)
 

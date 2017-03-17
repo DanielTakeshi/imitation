@@ -2,17 +2,29 @@ import argparse
 import json
 import h5py
 import numpy as np
-
 from environments import rlgymenv
 import gym
-
 import policyopt
 from policyopt import SimConfig, rl, util, nn, tqdm
 import os.path
-
 import cv2
 
+
 def main():
+    """
+    If we have trained policies and snapshots, I think we can use this to watch
+    videos of our agent in action. I don't think I can use this without doing
+    some training first. This doesn't do training itself; we need to provide a
+    policy, but the h5 file has to also be a directory which contains other
+    information (see the yaml files for what I believe are similar examples).
+
+    I'm not sure why we have rl giving us Gaussian policies vs Gibbs policies.
+    What's the difference? They should just be functions mapping from states to
+    actions?
+
+    After that, it seems like we're just simulating stuff and hopefully a video
+    would appear if I can get this to run.
+    """
     np.set_printoptions(suppress=True, precision=5, linewidth=1000)
 
     parser = argparse.ArgumentParser()
@@ -30,6 +42,7 @@ def main():
 
     # Load the saved state
     policy_file, policy_key = util.split_h5_name(args.policy)
+
     print 'Loading policy parameters from %s in %s' % (policy_key, policy_file)
     with h5py.File(policy_file, 'r') as f:
         train_args = json.loads(f.attrs['args'])

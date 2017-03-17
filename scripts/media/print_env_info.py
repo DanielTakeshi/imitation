@@ -4,7 +4,7 @@ from gym import spaces, envs
 gym.undo_logger_setup()
 import logging; logging.getLogger('gym.core').addHandler(logging.NullHandler())
 
-names = ['CartPole-v0', 'Acrobot-v0', 'MountainCar-v0', 'Reacher-v1', 'HalfCheetah-v1', 'Hopper-v1', 'Walker2d-v1', 'Ant-v1', 'Humanoid-v1']
+names = ['CartPole-v0', 'Acrobot-v1', 'MountainCar-v0', 'Reacher-v1', 'HalfCheetah-v1', 'Hopper-v1', 'Walker2d-v1', 'Ant-v1', 'Humanoid-v1']
 for n in names:
     env = envs.make(n)
 

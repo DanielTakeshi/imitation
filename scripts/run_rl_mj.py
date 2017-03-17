@@ -1,15 +1,19 @@
 import argparse
 import json
-
 import numpy as np
-
 from environments import rlgymenv
 import policyopt
 from policyopt import SimConfig, rl, util, nn
-
 TINY_ARCHITECTURE = '[{"type": "fc", "n": 64}, {"type": "nonlin", "func": "tanh"}, {"type": "fc", "n": 64}, {"type": "nonlin", "func": "tanh"}]'
 SIMPLE_ARCHITECTURE = '[{"type": "fc", "n": 100}, {"type": "nonlin", "func": "tanh"}, {"type": "fc", "n": 100}, {"type": "nonlin", "func": "tanh"}]'
+
+
 def main():
+    """
+    This runs TRPO (or other policies). It's purpose is to generate expert
+    policies and thus expert trajectories for GAIL. Most of the time, we'll be
+    using the SIMPLE_ARCHITECTURE, which is reported in the paper.
+    """
     np.set_printoptions(suppress=True, precision=5, linewidth=1000)
 
     parser = argparse.ArgumentParser()

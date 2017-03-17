@@ -120,11 +120,13 @@ def split_h5_name(fullpath, sep='/'):
     sep_inds = [i for i, c in enumerate(fullpath) if c == sep]
     for sep_idx in sep_inds:
         filename, objname = fullpath[:sep_idx], fullpath[sep_idx:]
+        print("file={} obj={}".format(filename,objname))
         if not filename: continue
         # Try to open the file. If it fails, try the next separation point.
         try: h5py.File(filename, 'r').close()
         except IOError: continue
         # It worked!
+        print("it worked")
         return filename, objname
     raise IOError('Could not open HDF5 file/object %s' % fullpath)
 
