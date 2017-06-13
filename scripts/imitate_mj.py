@@ -1,3 +1,11 @@
+"""
+Called during step 2 of the overall imitation pipeline. Step 2 creates many
+python calls which (via subprocesses) call this script with specialized
+arguments. This script then refers to any of the optimizer classes in this
+"package" which does the bulk of the imitation learning. Ordinarily, it'd be
+done in bulk, but I'm doing it sequentially.
+"""
+
 import argparse, h5py, json
 import numpy as np
 from environments import rlgymenv
@@ -5,6 +13,7 @@ import policyopt
 from policyopt import imitation, nn, rl, util
 
 
+# The mode `ga` includes apprenticeship learning and FEM (and GAIL!).
 MODES = ('bclone', 'ga')
 OBSNORM_MODES = ('none', 'expertdata', 'online')
 TINY_ARCHITECTURE = '[{"type": "fc", "n": 64}, {"type": "nonlin", "func": "tanh"}, {"type": "fc", "n": 64}, {"type": "nonlin", "func": "tanh"}]'
@@ -48,6 +57,11 @@ def load_dataset(filename, limit_trajs, data_subsamp_freq):
 
 
 def main():
+    """ 
+    NOTE! Don't forget that these are effectively called directly from the yaml
+    files. They call imitate_mj.py with their own arguments, so check there if
+    some of the values differ from the default ones.
+    """
     np.set_printoptions(suppress=True, precision=5, linewidth=1000)
 
     parser = argparse.ArgumentParser()
@@ -63,7 +77,7 @@ def main():
     parser.add_argument('--policy_hidden_spec', type=str, default=SIMPLE_ARCHITECTURE)
     parser.add_argument('--tiny_policy', action='store_true')
     parser.add_argument('--obsnorm_mode', choices=OBSNORM_MODES, default='expertdata')
-    # Behavioral cloning optimizer
+    # Behavioral cloning optimizer (ok ... 128 and 0.7 settings are in the paper).
     parser.add_argument('--bclone_lr', type=float, default=1e-3)
     parser.add_argument('--bclone_batch_size', type=int, default=128)
     # parser.add_argument('--bclone_eval_nsa', type=int, default=128*100)

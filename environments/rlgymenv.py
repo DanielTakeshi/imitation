@@ -1,14 +1,18 @@
 import numpy as np
 import policyopt
-
 import gym
 from gym import spaces, envs
-
 gym.undo_logger_setup()
 import logging; logging.getLogger('gym.core').addHandler(logging.NullHandler())
 
 
 class RLGymSim(policyopt.Simulation):
+    """
+    One 'instance' of an environment, except with slightly different steps due
+    to Jonathan Ho's desired action representation (for discrete action spaces).
+    That might be the only difference?
+    """
+
     def __init__(self, env_name):
         self.env = envs.make(env_name)
         self.action_space = self.env.action_space
@@ -17,8 +21,8 @@ class RLGymSim(policyopt.Simulation):
 
     def step(self, action):
         if isinstance(self.action_space, spaces.Discrete):
-            # We encode actions in finite spaces as an integer inside a length-1 array
-            # but Gym wants the integer itself
+            # (JHo) We encode actions in finite spaces as an integer inside a
+            # length-1 array but Gym wants the integer itself
             assert action.ndim == 1 and action.size == 1 and action.dtype in (np.int32, np.int64)
             action = action[0]
         else:
@@ -48,8 +52,12 @@ class RLGymSim(policyopt.Simulation):
         self.curr_obs = self.env.reset()
         self.is_done = False
 
+
 def _convert_space(space):
-    '''Converts a rl-gym space to our own space representation'''
+    """ (JHo) Converts a rl-gym space to our own space representation. 
+    
+    Specifically, ...
+    """
     if isinstance(space, spaces.Box):
         assert space.low.ndim == 1 and space.low.shape >= 1
         return policyopt.ContinuousSpace(dim=space.low.shape[0])
@@ -59,10 +67,21 @@ def _convert_space(space):
 
 
 class RLGymMDP(policyopt.MDP):
+    """
+    Class representing an MDP which *uses* RLGymSim, along with the customized
+    observation and action space representation. My best guess is that this is
+    done as a wrapper around an environment like a normal gym `env` thingy
+    (though as mentioned earlier, with the different states). The @property just
+    means calling (...).obs_space or (...).action_space will return what we
+    have for those attributes. I suppose the advantage is if we ever wanted to
+    extend the code to add logic (error checks, etc.) but I'm confused as to why
+    it's needed in this case. Note that policyopt.MDP is the super class and
+    subclasses need to override such methods.
+    """
+
     def __init__(self, env_name):
         print 'Gym version:', gym.version.VERSION
         self.env_name = env_name
-
         tmpsim = self.new_sim()
         self._obs_space = _convert_space(tmpsim.env.observation_space)
         self._action_space = _convert_space(tmpsim.env.action_space)

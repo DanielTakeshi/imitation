@@ -124,6 +124,14 @@ class TrajBatch(object):
 
     @classmethod
     def FromTrajs(cls, trajs):
+        """ 
+        Returning a TrajBatch, despite the method being defined *in* the
+        TrajBatch class. Interesting.  The intuition is that it provides an
+        alterantive 'constructor' in case we need to make an instance of the
+        class with this particular input (only `trajs`). We can get all the
+        other information (obs, obsfeat, etc.) just from the trajs, and rather
+        than parse it outside the code, we'll do it internally here. Nice!
+        """
         assert all(isinstance(traj, Trajectory) for traj in trajs)
         obs = RaggedArray([t.obs_T_Do for t in trajs])
         obsfeat = RaggedArray([t.obsfeat_T_Df for t in trajs])
@@ -149,6 +157,11 @@ class TrajBatch(object):
 
     @classmethod
     def LoadH5(cls, dset, obsfeat_fn):
+        """ 
+        Another way we can create a TrajBatch, if all we have are `dset`, a
+        dataset, and `obsfeat_fn`. Amusingly, it actually calls the *other*
+        classmethod. Wow. 
+        """
         return cls.FromTrajs([Trajectory.LoadH5(v, obsfeat_fn) for k, v in dset.iteritems()])
 
 

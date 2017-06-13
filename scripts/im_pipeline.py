@@ -3,13 +3,12 @@ import json
 import h5py
 import numpy as np
 import yaml
+import sys
 import os, os.path, shutil
 from policyopt import util
-
-
+import subprocess, tempfile, datetime
 
 # PBS
-import subprocess, tempfile, datetime
 def create_pbs_script(commands, outputfiles, jobname, queue, nodes, ppn):
     assert len(commands) == len(outputfiles)
     template = '''#!/bin/bash
@@ -48,6 +47,7 @@ eval $cmd >>$outputfile 2>&1
         outputfiles_str='\n'.join(outputfiles),
         nodes=nodes,
         ppn=ppn)
+
 
 def runpbs(cmd_templates, outputfilenames, argdicts, jobname, queue, nodes, ppn, job_range=None, outputfile_dir=None, qsub_script_copy=None):
     assert len(cmd_templates) == len(outputfilenames) == len(argdicts)
@@ -88,8 +88,18 @@ def runpbs(cmd_templates, outputfilenames, argdicts, jobname, queue, nodes, ppn,
             raise RuntimeError('Canceled.')
 
 
-
 def load_trained_policy_and_mdp(env_name, policy_state_str):
+    """ Creates the specialized MDP and policy objects needed to sample expert
+    trajectories for a given environment.
+
+    Returns:
+        mdp: An instance of `RLGymMDP`, similar to a real gym env except with
+            customized obs/action spaces and an internal `RLGyMSim` object.
+        policy: The agent's policy, encoded as either rl.GaussianPolicy for
+            continuous actions, or rl.GibbsPolicy for discrete actions.
+        train_args: A dictionary of arguments (like argparse dicts) based on the
+            trained policy's TRPO run.
+    """
     import gym
     import policyopt
     from policyopt import nn, rl
@@ -130,8 +140,8 @@ def load_trained_policy_and_mdp(env_name, policy_state_str):
 
 def gen_taskname2outfile(spec, assert_not_exists=False):
     '''
-    Generate dataset filenames for each task. Phase 0 (sampling) writes to these files,
-    phase 1 (training) reads from them.
+    (JHo) Generate dataset filenames for each task. Phase 0 (sampling) writes to
+    these files, phase 1 (training) reads from them.
     '''
     taskname2outfile = {}
     trajdir = os.path.join(spec['options']['storagedir'], spec['options']['traj_subdir'])
@@ -145,8 +155,22 @@ def gen_taskname2outfile(spec, assert_not_exists=False):
     return taskname2outfile
 
 
-
 def exec_saved_policy(env_name, policystr, num_trajs, deterministic, max_traj_len=None):
+    """ For given env_name (e.g. CartPole-v0)  with an expert policy, call
+    `mdp.sim_mp` to get states and actions info for the sampled trajectories.
+    
+    The simulation's actually defined in `policyopt/__init__.py`, because the
+    mdp (RLGymMDP) is a subclass of the MDP there. It mostly relies on a
+    `sim_single` method which simulates one rollout in very readable code.
+    
+    Returns:
+        trajbatch: A customized class encoding information about the
+            trajectories, e.g. it can handle varying lengths.
+        policy: The agent's policy, encoded as either rl.GaussianPolicy for
+            continuous actions, or rl.GibbsPolicy for discrete actions.
+        mdp: An instance of `RLGymMDP`, similar to a real gym env except with
+            customized obs/action spaces and an `RLGyMSim` object.
+    """
     import policyopt
     from policyopt import SimConfig, rl, util, nn, tqdm
     from environments import rlgymenv
@@ -155,7 +179,6 @@ def exec_saved_policy(env_name, policystr, num_trajs, deterministic, max_traj_le
     # Load MDP and policy
     mdp, policy, _ = load_trained_policy_and_mdp(env_name, policystr)
     max_traj_len = min(mdp.env_spec.timestep_limit, max_traj_len) if max_traj_len is not None else mdp.env_spec.timestep_limit
-
     print 'Sampling {} trajs (max len {}) from policy {} in {}'.format(num_trajs, max_traj_len, policystr, env_name)
 
     # Sample trajs
@@ -186,8 +209,13 @@ def eval_snapshot(env_name, checkptfile, snapshot_idx, num_trajs, deterministic)
 
 
 def phase0_sampletrajs(spec, specfilename):
+    """ The first phase, sampling expert trajectories from TRPO. 
+    
+    This *can* be done sequentially on one computer, no need to worry. This
+    *will* save the .h5 files according to `storagedir` in the specs, so
+    manually remove if needed.
+    """
     util.header('=== Phase 0: Sampling trajs from expert policies ===')
-
     num_trajs = spec['training']['full_dataset_num_trajs']
     util.header('Sampling {} trajectories'.format(num_trajs))
 
@@ -201,7 +229,7 @@ def phase0_sampletrajs(spec, specfilename):
             task['env'], task['policy'], num_trajs,
             deterministic=spec['training']['deterministic_expert'],
             max_traj_len=None)
-
+        
         # Quick evaluation
         returns = trajbatch.r.padded(fill=0.).sum(axis=1)
         avgr = trajbatch.r.stacked.mean()
@@ -212,11 +240,11 @@ def phase0_sampletrajs(spec, specfilename):
         print 'len: {} +/- {}'.format(lengths.mean(), lengths.std())
         print 'ent: {}'.format(ent)
 
-        # Save the trajs to a file
+        # Save the trajs to a file (pad in case uneven lengths).
         with h5py.File(taskname2outfile[task['name']], 'w') as f:
             def write(dsetname, a):
                 f.create_dataset(dsetname, data=a, compression='gzip', compression_opts=9)
-            # Right-padded trajectory data
+            # Right-padded trajectory data using custom RaggedArray class.
             write('obs_B_T_Do', trajbatch.obs.padded(fill=0.))
             write('a_B_T_Da', trajbatch.a.padded(fill=0.))
             write('r_B_T', trajbatch.r.padded(fill=0.))
@@ -229,11 +257,21 @@ def phase0_sampletrajs(spec, specfilename):
 
 
 def phase1_train(spec, specfilename):
+    """ In the normal code, this rounds up a long list of commands of the form
+    `python (script name) (arguments)` which can be run on a cluster.
+
+    It's really cool how this works. The `cmd_templates` list turns into a bunch
+    of python script calls, except it has string formatting to allow the
+    arguments to fill them in. A much better way than writing a long bash
+    script! (Actually, to *get* a bash script, just write these one by one to a
+    file and then I think running the file is OK.)
+
+    I modified this to run sequentially.
+    """
     util.header('=== Phase 1: training ===')
 
-    # Generate array job that trains all algorithms
-    # over all tasks, for all dataset sizes (3 loops)
-
+    # Generate array job that trains (1) all algorithms over (2) all tasks, for
+    # (3) all dataset sizes, so yes it's three loops.
     taskname2dset = gen_taskname2outfile(spec)
 
     # Make checkpoint dir. All outputs go here
@@ -262,24 +300,37 @@ def phase1_train(spec, specfilename):
                         'out': os.path.join(checkptdir, strid + '.h5'),
                     })
 
-    pbsopts = spec['options']['pbs']
-    runpbs(
-        cmd_templates, outputfilenames, argdicts,
-        jobname=pbsopts['jobname'], queue=pbsopts['queue'], nodes=1, ppn=pbsopts['ppn'],
-        job_range=pbsopts['range'] if 'range' in pbsopts else None,
-        qsub_script_copy=os.path.join(checkptdir, 'qsub_script.sh')
-    )
+    # New, put all this in a correct list and call them from Python.
+    all_commands = [x.format(**y) for (x,y) in zip(cmd_templates,argdicts)]
+    all_commands = all_commands[:1]  # temporary
+    print("Total number of commands to run: {}.".format(len(all_commands)))
+    print(all_commands[0])
 
+    # Old code from Jonathan Ho
+    ## pbsopts = spec['options']['pbs']
+    ## runpbs(
+    ##     cmd_templates, outputfilenames, argdicts,
+    ##     jobname=pbsopts['jobname'], queue=pbsopts['queue'], nodes=1, ppn=pbsopts['ppn'],
+    ##     job_range=pbsopts['range'] if 'range' in pbsopts else None,
+    ##     qsub_script_copy=os.path.join(checkptdir, 'qsub_script.sh')
+    ## )
+
+    # Old code from Jonathan Ho (keep?)
     # Copy the pipeline yaml file to the output dir too
     shutil.copyfile(specfilename, os.path.join(checkptdir, 'pipeline.yaml'))
 
+    # Old code from Jonathan Ho (keep?)
     # Keep git commit
     import subprocess
     git_hash = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
     with open(os.path.join(checkptdir, 'git_hash.txt'), 'w') as f:
         f.write(git_hash + '\n')
 
+
 def phase2_eval(spec, specfilename):
+    """
+
+    """
     util.header('=== Phase 2: evaluating trained models ===')
     import pandas as pd
 
@@ -374,6 +425,36 @@ def phase2_eval(spec, specfilename):
 
 
 def main():
+    """ 
+    This will pick one of the three phases to use, the choice of which needs to
+    be supplied as a command-line argument. The phase dict maps to one of three
+    *functions*, which then is used to handle the rest of its logic. I think we
+    just run these in order with the same set of arguments (which basically is
+    the yaml file...) except for that phase. If redoing trajectory sampling,
+    delete the correct `trajs` directory. If redoing training, delete the
+    correct `checkpoints` directory.
+
+    Here's what I've run so far:
+
+        Classic
+    (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 1_train
+
+        Other MuJoCo
+    (success) python scripts/im_pipeline.py pipelines/im_pipeline.yaml 0_sampletrajs
+
+        Reacher
+    (success) python scripts/im_pipeline.py pipelines/im_regtest_pipeline.yaml 0_sampletrajs
+
+        Humanoid
+    (success) python scripts/im_pipeline.py pipelines/im_humanoid_pipeline.yaml 0_sampletrajs
+
+    What's interesting is that some of the mujoco environments use a simpler
+    network, just one hidden layer with 50 units and ReLUs. Why? Also, the other
+    architectures here use two hidden layers with tanhs, as described in the
+    paper but with 64 units instead of 100. I think I better double check what
+    network options we have.
+    """
     np.set_printoptions(suppress=True, precision=5, linewidth=1000)
 
     phases = {
@@ -389,8 +470,8 @@ def main():
 
     with open(args.spec, 'r') as f:
         spec = yaml.load(f)
-
     phases[args.phase](spec, args.spec)
+
 
 if __name__ == '__main__':
     main()

@@ -1,19 +1,21 @@
-import numpy as np
+"""
+Run this to reproduce results from the random policy's performance in Table 1 of
+the GAIL paper. Note: older versions of certain environments were removed from
+gym and thus can no longer be run (seriously??). I verified this, FYI.
+"""
 
+import numpy as np
 import gym
 from gym import spaces, envs
-
 gym.undo_logger_setup()
 import logging; logging.getLogger('gym.core').addHandler(logging.NullHandler())
 
 num_trials = 50
-
 print 'Name & Random policy performance'
-
 names = ['CartPole-v0', 'Acrobot-v1', 'MountainCar-v0', 'Reacher-v1', 'HalfCheetah-v1', 'Hopper-v1', 'Walker2d-v1', 'Ant-v1', 'Humanoid-v1']
+
 for env_name in names:
     env = envs.make(env_name)
-
     returns = []
     for _ in xrange(num_trials):
         env.reset()
@@ -23,5 +25,4 @@ for env_name in names:
             ret += r
             if done: break
         returns.append(ret)
-
     print '{} & {} \pm {}'.format(env_name, np.mean(returns), np.std(returns))

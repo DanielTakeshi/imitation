@@ -324,10 +324,12 @@ def _printfields(fields, sep=' | ', width=8, precision=4, print_header=True):
         print '-'*len(header)
     print sep.join(fmts).format(*vals)
 
+
 def _type_to_col(t, pos):
     if t is int: return tables.Int32Col(pos=pos)
     if t is float: return tables.Float32Col(pos=pos)
     raise NotImplementedError(t)
+
 
 class TrainingLog(object):
     '''A training log backed by PyTables. Stores diagnostic numbers over time and model snapshots.'''
@@ -342,7 +344,6 @@ class TrainingLog(object):
             self.f = tables.open_file(filename, mode='w')
             for k, v in attrs: self.f.root._v_attrs[k] = v
             self.log_table = None
-
         self.schema = None # list of col name / types for display
 
     def close(self):
@@ -390,11 +391,9 @@ class TrainingLog(object):
             self.f.create_array(groupname, arrayname, v.get_value(), createparents=True)
 
         # Store the model hash as an attribute
-        self.f.getNode(snapshot_root)._v_attrs.hash = model.savehash()
-
+        # Daniel: `getNode` is outdated, needs to be `get_node`.
+        self.f.get_node(snapshot_root)._v_attrs.hash = model.savehash()
         self.f.flush()
-
-
 
 
 class NoOpStandardizer(object):
@@ -404,6 +403,7 @@ class NoOpStandardizer(object):
     def unstandardize_expr(self, y_B_D): return y_B_D
     def standardize(self, x_B_D): return x_B_D
     def unstandardize(self, y_B_D): return y_B_D
+
 
 class Standardizer(Model):
     def __init__(self, dim, eps=1e-6, init_count=0, init_mean=0., init_meansq=1.):
@@ -473,6 +473,7 @@ def test_standardizer():
     assert np.allclose(s._mean_1_D.get_value()[0,:], allx.mean(axis=0))
     assert np.allclose(s.get_stdev(), allx.std(axis=0))
     print 'ok'
+
 
 if __name__ == '__main__':
     test_standardizer()

@@ -3,10 +3,44 @@ import numpy as np
 from contextlib import contextmanager
 import theano; from theano import tensor
 from scipy.optimize import fmin_l_bfgs_b
+import sys
 
 
 class BehavioralCloningOptimizer(object):
     def __init__(self, mdp, policy, lr, batch_size, obsfeat_fn, ex_obs, ex_a, eval_sim_cfg, eval_freq, train_frac):
+        """ Behavioral Cloning.
+
+        Parameters
+        ----------
+        mdp: [rlgymenv.RLGymMDP]
+            Contains logic about the specific environment such as action spaces.
+        policy: [rl.Policy]
+            Either GaussianPolicy (if continuous actions) or GibbsPolicy (if
+            discrete actions). They have built-in theano functions to compute
+            relevant statistics from behavioral cloning.
+        lr: [float]
+            Learning rate for Adam.
+        batch_size: [int]
+            Number of (s,a) pairs in a given minibatch of BC for Adam updates.
+        obsfeat_fn: [function]
+            A function which takes raw observations and turns them into
+            features. For BC, we're using the identity (for now).
+        ex_obs: [numpy array]
+            Contains the expert observation data for BC, of shape (N, ob_dim)
+            where N is the full data size (chosen after subsampling) and ob_dim
+            is the observation dimension, **before** applying obsfeat_fn.
+        ex_a: [numpy array]
+            Contains the expert action data for BC, of shape (N, act_dim) where
+            N is the full data size (chosen after subsampling) and act_dim is
+            the action dimension.
+        eval_sim_cfg: [policyopt.SimConfig]
+            A configuration file, but for some reason it seems like we're not
+            using it here. (???)
+        eval_freq: [int]
+            Every `eval_freq` iterations, evaluate on validation set.
+        train_frac: [float]
+            The fraction of trajectories to use for training.
+        """
         self.mdp, self.policy, self.lr, self.batch_size, self.obsfeat_fn = mdp, policy, lr, batch_size, obsfeat_fn
 
         # Randomly split data into train/val
@@ -17,22 +51,36 @@ class BehavioralCloningOptimizer(object):
         train_inds, val_inds = shuffled_inds[:num_train], shuffled_inds[num_train:]
         assert len(train_inds) >= 1 and len(val_inds) >= 1
         print '{} training examples and {} validation examples'.format(len(train_inds), len(val_inds))
+
+        # These four numpy arrays contain the complete, split dataset for BC.
+        # -------------------------------------------
+        # train_ex_obsfeat.shape = (numtr, state_dim)
+        # train_ex_a.shape       = (numtr, act_dim)
+        # val_ex_obsfeat.shape   = (numval, state_dim)
+        # val_ex_a.shape         = (numval, act_dim)
+        # -------------------------------------------
+        # The code subsamples, so numtr and numval could be quite small, one
+        # possible split (e..g with Cartpole) is numtr=14, numval=6.
         self.train_ex_obsfeat, self.train_ex_a = self.obsfeat_fn(ex_obs[train_inds]), ex_a[train_inds]
         self.val_ex_obsfeat, self.val_ex_a = self.obsfeat_fn(ex_obs[val_inds]), ex_a[val_inds]
 
         self.eval_sim_cfg = eval_sim_cfg
         self.eval_freq = eval_freq
-
         self.total_time = 0.
         self.curr_iter = 0
 
+
     def step(self):
         with util.Timer() as t_all:
-            # Subsample expert transitions for SGD
+            # Subsample expert transitions for SGD. (Daniel: we often use
+            # relatively few (s,a) pairs, and since self.batch_size=128 by
+            # default, this means inds contains a lot of duplicates.)
             inds = np.random.choice(self.train_ex_obsfeat.shape[0], size=self.batch_size)
             batch_obsfeat_B_Do = self.train_ex_obsfeat[inds,:]
             batch_a_B_Da = self.train_ex_a[inds,:]
-            # Take step
+
+            # Take step (Daniel: like a TensorFlow session. Also, I checked on
+            # Cartpole and verified that the losses are roughly decreasing.)
             loss = self.policy.step_bclone(batch_obsfeat_B_Do, batch_a_B_Da, self.lr)
 
             # Roll out trajectories when it's time to evaluate our policy
@@ -47,7 +95,6 @@ class BehavioralCloningOptimizer(object):
                     assert self.val_ex_a.shape[1] == 1
                     # val_acc = (self.policy.sample_actions(self.val_ex_obsfeat)[1].argmax(axis=1) == self.val_ex_a[1]).mean()
                     val_acc = -val_loss # val accuracy doesn't seem too meaningful so just use this
-
 
         # Log
         self.total_time += t_all.dt
