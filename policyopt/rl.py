@@ -381,6 +381,9 @@ class LinearValueFunc(object):
 
 
 class ValueFunc(nn.Model):
+    """ A value function, mapping (states) -> (estim. value), to decrease
+    variance in policy gradients. """
+
     def __init__(self, hidden_spec, obsfeat_space, enable_obsnorm, enable_vnorm, varscope_name, max_kl, damping, time_scale):
         self.hidden_spec = hidden_spec
         self.obsfeat_space = obsfeat_space

@@ -7,6 +7,8 @@ import sys
 
 
 class BehavioralCloningOptimizer(object):
+    """ Follows the same interface as ImitationOptimizer. """
+
     def __init__(self, mdp, policy, lr, batch_size, obsfeat_fn, ex_obs, ex_a, eval_sim_cfg, eval_freq, train_frac):
         """ Behavioral Cloning.
 
@@ -71,6 +73,7 @@ class BehavioralCloningOptimizer(object):
 
 
     def step(self):
+        """ Called from `scripts/imitate_mj.py`, one BC step. """
         with util.Timer() as t_all:
             # Subsample expert transitions for SGD. (Daniel: we often use
             # relatively few (s,a) pairs, and since self.batch_size=128 by
@@ -83,7 +86,12 @@ class BehavioralCloningOptimizer(object):
             # Cartpole and verified that the losses are roughly decreasing.)
             loss = self.policy.step_bclone(batch_obsfeat_B_Do, batch_a_B_Da, self.lr)
 
-            # Roll out trajectories when it's time to evaluate our policy
+            # Daniel: TODO this seems odd. We never use `trueret`, `avgr`,
+            # `ent`, or `avglen` at all?? It seems like we're missing stuff
+            # here? We *are* doing validation steps to evaluate when to *stop*
+            # BC, that's good, but no evaluation of how good BC performs.
+
+            # Roll out trajectories when it's time to evaluate our policy.
             val_loss = val_acc = trueret = avgr = ent = np.nan
             avglen = -1
             if self.eval_freq != 0 and self.curr_iter % self.eval_freq == 0:
@@ -96,7 +104,6 @@ class BehavioralCloningOptimizer(object):
                     # val_acc = (self.policy.sample_actions(self.val_ex_obsfeat)[1].argmax(axis=1) == self.val_ex_a[1]).mean()
                     val_acc = -val_loss # val accuracy doesn't seem too meaningful so just use this
 
-        # Log
         self.total_time += t_all.dt
         fields = [
             ('iter', self.curr_iter, int),
@@ -116,7 +123,56 @@ class BehavioralCloningOptimizer(object):
 class TransitionClassifier(nn.Model):
     '''Reward/adversary for generative-adversarial training'''
 
-    def __init__(self, obsfeat_space, action_space, hidden_spec, max_kl, adam_lr, adam_steps, ent_reg_weight, enable_inputnorm, include_time, time_scale, favor_zero_expert_reward, varscope_name):
+    def __init__(self, obsfeat_space, action_space, hidden_spec, max_kl,
+            adam_lr, adam_steps, ent_reg_weight, enable_inputnorm, include_time,
+            time_scale, favor_zero_expert_reward, varscope_name): 
+        """ Computers a lot of things (most importantly, theano functions) for
+        the TransitionClassifier object.
+
+        I'm *pretty* sure this is the Discriminator, for GAIL. However, this is
+        also used for the FEM and Apprenticeship Learning (AL) so it is probably
+        more general. The point is that this network maps (s,a) to un-normalized
+        scores, and for the Discriminator in GAIL that score indicates true vs
+        generated. A slight quirk, with continuous actions, we map (s,a) ->
+        (real_num) indicating the probability of (s,a) being from the
+        **expert**. In continuous actions, we map (s) -> (score_a1, score_a2,
+        ..., score_an), where we have one score for each action, and each score
+        is the prob.  of that (s,a) pair being from the expert.
+
+        Parameters
+        ----------
+        obsfeat_space: [policyopt.Space]
+            A FiniteSpace or a ContinuousSpace object representing observation
+            states, mostly to get storage or dimension quantities.
+        action_space: [policyopt.Space]
+            A FiniteSpace or a ContinuousSpace object representing action
+            states, mostly to get storage or dimension quantities.
+        hidden_spec: [list]
+            Specifies the **hidden layers** of the networks. [TODO]
+        max_kl: [float]
+            TODO we never use this?
+        adam_lr: [float]
+            The learning rate for Adam updates.
+        adam_steps: [int]
+            Number of Adam update steps for the Discriminator, usually one since
+            Goodfellow recommends one step for each network.
+        ent_reg_weight: [float]
+            Entropy regularizer term, \lambda in the paper.
+        enable_inputnorm: [boolean]
+            Whether observations (and actions sometimes) should be normalized.
+        include_time: [boolean]
+            If True, add an extra quantity to the input to the network with some
+            notion of time. The default value is False and I think it should
+            stay that way; I'm not sure when I'd need it.
+        time_scale: [float]
+            Multiply the times by this factor. Again I'm not sure why we have
+            this.
+        favor_zero_expert_reward: [boolean]
+            ...
+        varscope_name: [string]
+            Variable scoping name, acts like TensorFlow. I think Jonathan Ho did
+            this to help with naming the layers in the network(s).
+        """
         self.obsfeat_space, self.action_space = obsfeat_space, action_space
         self.hidden_spec = hidden_spec
         self.max_kl = max_kl
@@ -131,9 +187,9 @@ class TransitionClassifier(nn.Model):
             obsfeat_B_Df = tensor.matrix(name='obsfeat_B_Df')
             a_B_Da = tensor.matrix(name='a_B_Da', dtype=theano.config.floatX if self.action_space.storage_type == float else 'int64')
             t_B = tensor.vector(name='t_B')
-
             scaled_t_B = self.time_scale * t_B
 
+            print("\n\tThe 'Adversary' (Discriminator) network, at least for GAIL:") 
             if isinstance(self.action_space, ContinuousSpace):
                 # For a continuous action space, map observation-action pairs to a real number (reward)
                 trans_B_Doa = tensor.concatenate([obsfeat_B_Df, a_B_Da], axis=1)
@@ -157,7 +213,6 @@ class TransitionClassifier(nn.Model):
 
             else:
                 # For a finite action space, map observation observations to a vector of rewards
-
                 # Normalize observations
                 with nn.variable_scope('inputnorm'):
                     self.inputnorm = (nn.Standardizer if enable_inputnorm else nn.NoOpStandardizer)(self.obsfeat_space.dim)
@@ -168,7 +223,7 @@ class TransitionClassifier(nn.Model):
                 else:
                     net_input = normedobs_B_Df
                     net_input_dim = self.obsfeat_space.dim
-                # Compute scores
+                # Compute scores; nn.FeedforwardNet forms most of the network.
                 with nn.variable_scope('hidden'):
                     net = nn.FeedforwardNet(net_input, (net_input_dim,), self.hidden_spec)
                 with nn.variable_scope('out'):
@@ -177,9 +232,12 @@ class TransitionClassifier(nn.Model):
                         initializer=np.zeros((net.output_shape[0], self.action_space.size)))
                 scores_B = out_layer.output[tensor.arange(normedobs_B_Df.shape[0]), a_B_Da[:,0]]
 
-
+        # Daniel: given input, we'll run them through the net and get output.
+        # `scores_B` should actually have B scores since it's a minibatch. Also,
+        # they're *logits*, since we pass them through a sigmoid later.
         if self.include_time:
-            self._compute_scores = thutil.function([obsfeat_B_Df, a_B_Da, t_B], scores_B) # scores define the conditional distribution p(label | (state,action))
+            # (JHo) scores define the conditional distribution p(label | (state,action))
+            self._compute_scores = thutil.function([obsfeat_B_Df, a_B_Da, t_B], scores_B) 
         else:
             compute_scores_without_time = thutil.function([obsfeat_B_Df, a_B_Da], scores_B)
             self._compute_scores = lambda _obsfeat_B_Df, _a_B_Da, _t_B: compute_scores_without_time(_obsfeat_B_Df, _a_B_Da)
@@ -203,6 +261,14 @@ class TransitionClassifier(nn.Model):
         param_vars = self.get_trainable_variables()
 
         # Logistic regression loss, regularized by negative entropy
+        # ----------------------------------------------------------------------
+        # Daniel: in the paper there's no \lambda for the discriminator update
+        # in the official "Algorithm 1", but in the text surrounding Equation
+        # 16, there *is* a \lambda so this is defnitely for the Discriminator.
+        # It's general enough to support *weighted* logistic regression, but
+        # that only applies if we have different number of expert/current states
+        # and actions.
+        # ----------------------------------------------------------------------
         labels_B = tensor.vector(name='labels_B')
         weights_B = tensor.vector(name='weights_B')
         losses_B = thutil.sigmoid_cross_entropy_with_logits(scores_B, labels_B)
@@ -220,13 +286,41 @@ class TransitionClassifier(nn.Model):
                 updates=thutil.adam(loss, param_vars, lr=adam_lr))
             self._adamstep = lambda _obsfeat_B_Df, _a_B_Da, _t_B, _labels_B, _weights_B: adamstep_without_time(_obsfeat_B_Df, _a_B_Da, _labels_B, _weights_B)
 
+
     @property
     def varscope(self): return self.__varscope
+
 
     def compute_reward(self, obsfeat_B_Df, a_B_Da, t_B):
         return self._compute_reward(obsfeat_B_Df, a_B_Da, t_B)
 
+
     def fit(self, obsfeat_B_Df, a_B_Da, t_B, exobs_Bex_Do, exa_Bex_Da, ext_Bex):
+        """ Runs Adam step(s) to update the Discriminator (at least for GAIL).
+
+        This uses data from the current policy (if doing GAIL, the Generator)
+        and the expert policy. The shape `B` doesn't *have* to be the same for
+        the current policy and the expert, but it's much easier to think about
+        it if they're the same.
+
+        I'm still not totally sure what the times represent for the current and
+        expert policies.
+
+        Parameters
+        ----------
+        obsfeat_B_Df: [numpy array]
+            States from the current policy, of shape (B, obs_shape)
+        a_B_Da: [numpy array]
+            Actions from the current policy, of shape (B, act_shape).
+        t_B: [numpy array]
+            Represents timesteps related to the current policy, of shape (B,).
+        exobs_Bex_Do: [numpy array]
+            States from the expert policy, of shape (B, obs_shape).
+        exa_Bex_Da: [numpy array]
+            Actions from the expert policy, of shape (B, act_shape).
+        ext_Bex: [numpy array]
+            Represents timesteps related to the expert policy, of shape (B,).
+        """
         # Transitions from the current policy go first, then transitions from the expert
         obsfeat_Ball_Df = np.concatenate([obsfeat_B_Df, exobs_Bex_Do])
         a_Ball_Da = np.concatenate([a_B_Da, exa_Bex_Da])
@@ -269,11 +363,13 @@ class TransitionClassifier(nn.Model):
             # ('snorm', util.maxnorm(scores_Ball), float),
         ]
 
+
     def update_inputnorm(self, obs_B_Do, a_B_Da):
         if isinstance(self.action_space, ContinuousSpace):
             self.inputnorm.update(np.concatenate([obs_B_Do, a_B_Da], axis=1))
         else:
             self.inputnorm.update(obs_B_Do)
+
 
     def plot(self, ax, idx1, idx2, range1, range2, n=100):
         assert len(range1) == len(range2) == 2 and idx1 != idx2
@@ -457,7 +553,14 @@ class LinearReward(object):
 
 
 class ImitationOptimizer(object):
+    """ Follows the same interface as BehavioralCloningOptimizer. """
+
     def __init__(self, mdp, discount, lam, policy, sim_cfg, step_func, reward_func, value_func, policy_obsfeat_fn, reward_obsfeat_fn, policy_ent_reg, ex_obs, ex_a, ex_t):
+        """ Imitation Optimizer, includes GAIL *and* FEM, AL.
+
+        Parameters
+        ----------
+        """
         self.mdp, self.discount, self.lam, self.policy = mdp, discount, lam, policy
         self.sim_cfg = sim_cfg
         self.step_func = step_func
@@ -478,9 +581,11 @@ class ImitationOptimizer(object):
         self.curr_iter = 0
         self.last_sampbatch = None # for outside access for debugging
 
-    def step(self):
-        with util.Timer() as t_all:
 
+    def step(self):
+        """ One single step in Imitation Learning. """
+
+        with util.Timer() as t_all:
             # Sample trajectories using current policy
             # print 'Sampling'
             with util.Timer() as t_sample:
@@ -559,7 +664,6 @@ class ImitationOptimizer(object):
                 else:
                     vfit_print = []
 
-        # Log
         self.total_num_trajs += len(sampbatch)
         self.total_num_sa += sum(len(traj) for traj in sampbatch)
         self.total_time += t_all.dt

@@ -6,7 +6,7 @@ arguments. This script then refers to any of the optimizer classes in this
 done in bulk, but I'm doing it sequentially.
 """
 
-import argparse, h5py, json
+import argparse, h5py, json, sys
 import numpy as np
 from environments import rlgymenv
 import policyopt
@@ -37,7 +37,7 @@ def load_dataset(filename, limit_trajs, data_subsamp_freq):
 
     # Stack everything together
     start_times_B = np.random.RandomState(0).randint(0, data_subsamp_freq, size=exlen_B.shape[0])
-    print 'start times'
+    print 'start times' # Subsample every k-th, but want to start at random times.
     print start_times_B
     exobs_Bstacked_Do = np.concatenate(
         [exobs_B_T_Do[i,start_times_B[i]:l:data_subsamp_freq,:] for i, l in enumerate(exlen_B)],
@@ -123,6 +123,7 @@ def main():
     util.header('MDP observation space, action space sizes: %d, %d\n' % (mdp.obs_space.dim, mdp.action_space.storage_size))
 
     # Initialize the policy
+    print("\n\tNow initializing the policy:")
     enable_obsnorm = args.obsnorm_mode != 'none'
     if isinstance(mdp.action_space, policyopt.ContinuousSpace):
         policy_cfg = rl.GaussianPolicyConfig(
@@ -141,6 +142,7 @@ def main():
     for v in policy.get_trainable_variables():
         util.header('- %s (%d parameters)' % (v.name, v.get_value().size))
     util.header('Total: %d parameters' % (policy.get_num_params(),))
+    print("\tFinished initializing the policy.\n")
 
     # Load expert data
     exobs_Bstacked_Do, exa_Bstacked_Da, ext_Bstacked = load_dataset(
@@ -173,6 +175,7 @@ def main():
 
     elif args.mode == 'ga':
         if args.reward_type == 'nn':
+            # FYI: this is the GAIL case.
             reward = imitation.TransitionClassifier(
                 hidden_spec=args.policy_hidden_spec,
                 obsfeat_space=mdp.obs_space,
@@ -187,6 +190,7 @@ def main():
                 favor_zero_expert_reward=bool(args.favor_zero_expert_reward),
                 varscope_name='TransitionClassifier')
         elif args.reward_type in ['l2ball', 'simplex']:
+            # FEM or game-theoretic apprenticeship learning, respectively.
             reward = imitation.LinearReward(
                 obsfeat_space=mdp.obs_space,
                 action_space=mdp.action_space,
@@ -201,6 +205,9 @@ def main():
         else:
             raise NotImplementedError(args.reward_type)
 
+        # All three of these 'advanced' IL algorithms use neural network value
+        # functions to reduce variance for policy gradient estimates.
+        print("\n\tThe **VALUE** function (may have action concatenated):")
         vf = None if bool(args.no_vf) else rl.ValueFunc(
             hidden_spec=args.policy_hidden_spec,
             obsfeat_space=mdp.obs_space,
@@ -235,7 +242,7 @@ def main():
         if reward is not None: reward.update_inputnorm(opt.reward_obsfeat_fn(exobs_Bstacked_Do), exa_Bstacked_Da)
         if vf is not None: vf.update_obsnorm(opt.policy_obsfeat_fn(exobs_Bstacked_Do))
 
-    # Run optimizer
+    # Run optimizer, i.e. {BehavioralCloning,Imitation}Optimizer.
     log = nn.TrainingLog(args.log, [('args', argstr)])
     for i in xrange(args.max_iter):
         iter_info = opt.step()

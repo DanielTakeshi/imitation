@@ -3,14 +3,17 @@ import theano
 from theano import tensor
 import util
 
+
 def flatcat(arrays):
     '''
     Flattens arrays and concatenates them in order.
     '''
     return tensor.concatenate([a.flatten() for a in arrays])
 
+
 def flatgrad(loss, vars_):
     return flatcat(tensor.grad(loss, vars_))
+
 
 def gaussian_kl(means1_N_D, stdevs1_N_D, means2_N_D, stdevs2_N_D):
     '''
@@ -24,6 +27,7 @@ def gaussian_kl(means1_N_D, stdevs1_N_D, means2_N_D, stdevs2_N_D):
               2.*(tensor.log(stdevs2_N_D).sum(axis=1) - tensor.log(stdevs1_N_D).sum(axis=1)) - D
         ))
 
+
 def gaussian_log_density(means_N_D, stdevs_N_D, x_N_D):
     '''Log density of a Gaussian distribution with diagonal covariance (specified as standard deviations).'''
     D = tensor.shape(means_N_D)[1]
@@ -31,12 +35,15 @@ def gaussian_log_density(means_N_D, stdevs_N_D, x_N_D):
     logprobs_B = -.5*tensor.sqr((x_N_D - means_N_D)/stdevs_N_D).sum(axis=1) + lognormconsts_B
     return logprobs_B
 
+
 def sigmoid_cross_entropy_with_logits(logits_B, labels_B):
     return tensor.nnet.binary_crossentropy(tensor.nnet.sigmoid(logits_B), labels_B)
+
 
 def logsigmoid(a):
     '''Equivalent to tf.log(tf.sigmoid(a))'''
     return -tensor.nnet.softplus(-a)
+
 
 def logit_bernoulli_kl(logits1_B, logits2_B):
     logp1_B, logp2_B = logsigmoid(logits1_B), logsigmoid(logits2_B)
@@ -45,9 +52,11 @@ def logit_bernoulli_kl(logits1_B, logits2_B):
     kl_B = p1_B*(logp1_B - logp2_B) + (1.-p1_B)*(logq1_B - logq2_B)
     return kl_B
 
+
 def logit_bernoulli_entropy(logits_B):
     ent_B = (1.-tensor.nnet.sigmoid(logits_B))*logits_B - logsigmoid(logits_B)
     return ent_B
+
 
 def logsumexp(a, axis, name=None):
     '''
@@ -57,11 +66,11 @@ def logsumexp(a, axis, name=None):
     amax = a.max(axis=axis, keepdims=True)
     return amax + tensor.log(tensor.exp(a-amax).sum(axis=axis, keepdims=True))
 
+
 def categorical_kl(logprobs1_B_A, logprobs2_B_A, name=None):
     '''KL divergence between categorical distributions, specified as log probabilities'''
     kl_B = (tensor.exp(logprobs1_B_A) * (logprobs1_B_A - logprobs2_B_A)).sum(axis=1)
     return kl_B
-
 
 
 def unflatten_into_tensors(flatparams_P, output_shapes, name=None):
@@ -77,6 +86,7 @@ def unflatten_into_tensors(flatparams_P, output_shapes, name=None):
         curr_pos += size
     # assert curr_pos == flatparams_P.get_shape().num_elements()
     return outputs
+
 
 # from http://arxiv.org/abs/1412.6980
 # and https://gist.github.com/Newmu/acb738767acb4788bac3
@@ -103,6 +113,9 @@ def adam(cost, params, lr, beta1=0.9, beta2=0.999, eps=1e-8):
 
 
 def function(inputs, outputs, **kwargs):
+    """ Daniel: a wrapper around a normal theano function. I think because
+    Jonathan Ho wanted to get scalars. Hopefully I don't need to worry about
+    this. """
     # Cache compiled function
     f = theano.function(inputs, outputs, **kwargs)
     def wrapper(*args):

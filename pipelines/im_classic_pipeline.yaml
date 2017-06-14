@@ -7,12 +7,6 @@ tasks:
     cuts_off_on_success: false
     data_subsamp_freq: 10
 
-  - name: mountaincar
-    env: MountainCar-v0
-    policy: expert_policies/classic/MountainCar-v0.h5/snapshots/iter0000100
-    cuts_off_on_success: true
-    data_subsamp_freq: 5
-
 training:
   full_dataset_num_trajs: 10
   dataset_num_trajs: [1, 4, 7, 10]
@@ -63,7 +57,6 @@ training:
         --reward_type l2ball
         --reward_include_time 0
         --log {out}
-
 
     # Apprenticeship learning (finite set of adversary rewards)
     - name: simplex # "game-theoretic" apprenticeship learning

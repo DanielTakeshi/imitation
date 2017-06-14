@@ -44,9 +44,10 @@ class RLGymSim(policyopt.Simulation):
         if track_body_name is not None and track_body_name in self.env.model.body_names:
             self.env.viewer.cam.trackbodyid = self.env.model.body_names.index(track_body_name)
 
-    def __del__(self):
-        if self.env.viewer:
-            self.env.viewer.finish()
+    ## Daniel: no idea why we're having this method here.
+    ## def __del__(self):
+    ##     if self.env.viewer:
+    ##         self.env.viewer.finish()
 
     def reset(self):
         self.curr_obs = self.env.reset()

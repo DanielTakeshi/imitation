@@ -87,6 +87,9 @@ def runpbs(cmd_templates, outputfilenames, argdicts, jobname, queue, nodes, ppn,
         else:
             raise RuntimeError('Canceled.')
 
+### -----------------------------------------------------------------
+### Daniel: ignoring the two methods above since I do it sequentially
+### -----------------------------------------------------------------
 
 def load_trained_policy_and_mdp(env_name, policy_state_str):
     """ Creates the specialized MDP and policy objects needed to sample expert
@@ -163,13 +166,17 @@ def exec_saved_policy(env_name, policystr, num_trajs, deterministic, max_traj_le
     mdp (RLGymMDP) is a subclass of the MDP there. It mostly relies on a
     `sim_single` method which simulates one rollout in very readable code.
     
-    Returns:
-        trajbatch: A customized class encoding information about the
-            trajectories, e.g. it can handle varying lengths.
-        policy: The agent's policy, encoded as either rl.GaussianPolicy for
-            continuous actions, or rl.GibbsPolicy for discrete actions.
-        mdp: An instance of `RLGymMDP`, similar to a real gym env except with
-            customized obs/action spaces and an `RLGyMSim` object.
+    Returns
+    -------
+    trajbatch: [TrajBatch]
+        A customized class encoding information about the trajectories, e.g. it
+        can handle varying lengths.
+    policy: [rl.Policy]
+        The agent's policy, encoded as either rl.GaussianPolicy for continuous
+        actions, or rl.GibbsPolicy for discrete actions.
+    mdp: [RLGymMDP]
+        Similar to a real gym env except with customized obs/action spaces and
+        an `RLGyMSim` object.
     """
     import policyopt
     from policyopt import SimConfig, rl, util, nn, tqdm
@@ -302,11 +309,10 @@ def phase1_train(spec, specfilename):
 
     # New, put all this in a correct list and call them from Python.
     all_commands = [x.format(**y) for (x,y) in zip(cmd_templates,argdicts)]
-    all_commands = all_commands[:1]  # temporary
+    #all_commands = all_commands[:7]  # temporary
     print("Total number of commands to run: {}.".format(len(all_commands)))
-    print(all_commands[0])
 
-    # Old code from Jonathan Ho
+    # Old code from Jonathan Ho, definitely delete
     ## pbsopts = spec['options']['pbs']
     ## runpbs(
     ##     cmd_templates, outputfilenames, argdicts,
@@ -315,16 +321,21 @@ def phase1_train(spec, specfilename):
     ##     qsub_script_copy=os.path.join(checkptdir, 'qsub_script.sh')
     ## )
 
-    # Old code from Jonathan Ho (keep?)
+    # Old code from Jonathan Ho (delete?)
     # Copy the pipeline yaml file to the output dir too
     shutil.copyfile(specfilename, os.path.join(checkptdir, 'pipeline.yaml'))
 
-    # Old code from Jonathan Ho (keep?)
+    # Old code from Jonathan Ho (delete?)
     # Keep git commit
     import subprocess
     git_hash = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
     with open(os.path.join(checkptdir, 'git_hash.txt'), 'w') as f:
         f.write(git_hash + '\n')
+
+    # (New code from Daniel) Let's actually run the commands from earlier.
+    for command in all_commands:
+        print("\nabout to run this command:\n{}\n".format(command))
+        subprocess.call(command.split(" "))
 
 
 def phase2_eval(spec, specfilename):
@@ -439,6 +450,7 @@ def main():
         Classic
     (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 0_sampletrajs
     python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 1_train
+    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 2_eval
 
         Other MuJoCo
     (success) python scripts/im_pipeline.py pipelines/im_pipeline.yaml 0_sampletrajs
