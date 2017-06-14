@@ -7,7 +7,8 @@ import sys
 
 
 class BehavioralCloningOptimizer(object):
-    """ Follows the same interface as ImitationOptimizer. """
+    """ Follows the same interface as ImitationOptimizer, all we need is some
+    initialization and a step function. """
 
     def __init__(self, mdp, policy, lr, batch_size, obsfeat_fn, ex_obs, ex_a, eval_sim_cfg, eval_freq, train_frac):
         """ Behavioral Cloning.
@@ -30,14 +31,15 @@ class BehavioralCloningOptimizer(object):
         ex_obs: [numpy array]
             Contains the expert observation data for BC, of shape (N, ob_dim)
             where N is the full data size (chosen after subsampling) and ob_dim
-            is the observation dimension, **before** applying obsfeat_fn.
+            is the observation dimension before applying any featurization
+            functions to it, if any.
         ex_a: [numpy array]
             Contains the expert action data for BC, of shape (N, act_dim) where
             N is the full data size (chosen after subsampling) and act_dim is
             the action dimension.
-        eval_sim_cfg: [policyopt.SimConfig]
+        eval_sim_cfg: [SimConfig]
             A configuration file, but for some reason it seems like we're not
-            using it here. (???)
+            using it here. (???) It's a namedtuple, mainly for convenience.
         eval_freq: [int]
             Every `eval_freq` iterations, evaluate on validation set.
         train_frac: [float]
@@ -303,9 +305,6 @@ class TransitionClassifier(nn.Model):
         the current policy and the expert, but it's much easier to think about
         it if they're the same.
 
-        I'm still not totally sure what the times represent for the current and
-        expert policies.
-
         Parameters
         ----------
         obsfeat_B_Df: [numpy array]
@@ -319,7 +318,9 @@ class TransitionClassifier(nn.Model):
         exa_Bex_Da: [numpy array]
             Actions from the expert policy, of shape (B, act_shape).
         ext_Bex: [numpy array]
-            Represents timesteps related to the expert policy, of shape (B,).
+            The times that those states/actions appeared in their respective
+            trajectories, of shape (B,). Note that this is concatenated among
+            multiple trajectories.
         """
         # Transitions from the current policy go first, then transitions from the expert
         obsfeat_Ball_Df = np.concatenate([obsfeat_B_Df, exobs_Bex_Do])
@@ -397,11 +398,14 @@ class TransitionClassifier(nn.Model):
 
 
 class LinearReward(object):
-    # things to keep in mind
-    # - continuous vs discrete actions
-    # - simplex or l2 ball
-    # - input norm
-    # - shifting so that 0 == expert or 0 == non-expert
+    """ For FEM or AL. Not for GAIL!
+
+    (JHo) things to keep in mind
+    - continuous vs discrete actions
+    - simplex or l2 ball
+    - input norm
+    - shifting so that 0 == expert or 0 == non-expert
+    """
 
     def __init__(self,
             obsfeat_space, action_space,
@@ -411,7 +415,39 @@ class LinearReward(object):
             exobs_Bex_Do, exa_Bex_Da, ext_Bex,
             sqscale=.01,
             quadratic_features=False):
+        """ Creates a LinearReward for FEM or AL.
 
+        Parameters
+        ----------
+        obsfeat_space: []
+
+        action_space: []
+
+        mode: []
+
+        enable_inputnorm: []
+
+        favor_zero_expert_reward: []
+
+        include_time: []
+
+        time_scale: []
+
+        exobs_Bex_Do: [numpy array]
+            Contains the expert observation data, of shape (N, ob_dim) where N
+            is the full data size (chosen after subsampling) and ob_dim is the
+            observation dimension before applying any featurization functions to
+            it, if any.
+        exa_Bex_Da: [numpy array]
+            Contains the expert action data, of shape (N, act_dim) where N is
+            the full data size (chosen after subsampling) and act_dim is the
+            action dimension.
+        ext_Bex: [numpy array]
+
+        sqscale: [float]
+
+        quadratic_features: [boolean]
+        """
         self.obsfeat_space, self.action_space = obsfeat_space, action_space
         assert mode in ['l2ball', 'simplex']
         print 'Linear reward function type: {}'.format(mode)
@@ -553,13 +589,59 @@ class LinearReward(object):
 
 
 class ImitationOptimizer(object):
-    """ Follows the same interface as BehavioralCloningOptimizer. """
+    """ Follows the same interface as BehavioralCloningOptimizer, all we need
+    is some initialization and a step function. """
 
-    def __init__(self, mdp, discount, lam, policy, sim_cfg, step_func, reward_func, value_func, policy_obsfeat_fn, reward_obsfeat_fn, policy_ent_reg, ex_obs, ex_a, ex_t):
+    def __init__(self, mdp, discount, lam, policy, sim_cfg, step_func,
+            reward_func, value_func, policy_obsfeat_fn, reward_obsfeat_fn,
+            policy_ent_reg, ex_obs, ex_a, ex_t):
         """ Imitation Optimizer, includes GAIL *and* FEM, AL.
 
         Parameters
         ----------
+        mdp: [RLGymMDP]
+            The MDP object, with a wrapper around a gym env.
+        discount: [float]
+            MDP discount value, for computing advantages and Q-values.
+        lam: [float]
+            The \lambda term in Generalized Advantage Estimation.
+        policy: [rl.Policy]
+            Either a GibbsPolicy or a GaussianPolicy to carry out the policy.
+            This is what we're trying to optimize to be as close to the expert
+            as possible.
+        sim_cfg: [SimConfig]
+            A namedtuple with attributes regarding the minimum number of
+            trajectories, the minimum total sa pairs, the batch size, and the
+            max trajectory length.
+        step_func: [rl.TRPO]
+            A customized TRPO function for taking a TRPO step.
+        reward_func: [imitation.TransitionClassifier]
+            The Generator is trying to fool the Discriminator, hence it needs
+            some rewards which can be specified by how much it is fooling it,
+            and these are derived from the imitation TransitionClassifier.
+        value_func: [rl.ValueFunc]
+            A value function (e.g. neural network) for computing the goodness of
+            states, or state-action pairs.
+        policy_obsfeat_fn: [function]
+            Transform observations into featurized observations. For now we
+            typically use the identity.
+        reward_obsfeat_fn: [function]
+            Transform rewards into featurized rewards. For now we typically use
+            the identity.
+        policy_ent_reg: [float]
+            An entropy regularizer term to encourage exploration. (I think...) 
+        ex_obs: [numpy array]
+            Contains the expert observation data, of shape (N, ob_dim) where N
+            is the full data size (chosen after subsampling) and ob_dim is the
+            observation dimension before applying any featurization functions to
+            it, if any.
+        ex_a: [numpy array]
+            Contains the expert action data, of shape (N, act_dim) where N is
+            the full data size (chosen after subsampling) and act_dim is the
+            action dimension.
+        ex_t: [numpy array]
+            Timesteps of those states/actions in their respective trajectories,
+            of shape (N,).
         """
         self.mdp, self.discount, self.lam, self.policy = mdp, discount, lam, policy
         self.sim_cfg = sim_cfg
@@ -572,8 +654,10 @@ class ImitationOptimizer(object):
         self.policy_ent_reg = policy_ent_reg
         util.header('Policy entropy regularization: {}'.format(self.policy_ent_reg))
 
-        assert ex_obs.ndim == ex_a.ndim == 2 and ex_t.ndim == 1 and ex_obs.shape[0] == ex_a.shape[0] == ex_t.shape[0]
-        self.ex_pobsfeat, self.ex_robsfeat, self.ex_a, self.ex_t = policy_obsfeat_fn(ex_obs), reward_obsfeat_fn(ex_obs), ex_a, ex_t
+        assert ex_obs.ndim == ex_a.ndim == 2 and ex_t.ndim == 1 and \
+                ex_obs.shape[0] == ex_a.shape[0] == ex_t.shape[0]
+        self.ex_pobsfeat, self.ex_robsfeat, self.ex_a, self.ex_t = \
+                policy_obsfeat_fn(ex_obs), reward_obsfeat_fn(ex_obs), ex_a, ex_t
 
         self.total_num_trajs = 0
         self.total_num_sa = 0
@@ -583,11 +667,32 @@ class ImitationOptimizer(object):
 
 
     def step(self):
-        """ One single step in Imitation Learning. """
+        """ One single step in Imitation Learning for GAIL, FEM, or AL.
+
+        Steps:
+        (1) Sample current policy trajectories. These are encoded in a set of 
+            RaggedArrays (one RA for rewards, one RA for actions, etc.) since
+            the lengths are not generally the same. With CartPole, for instance,
+            sampbatch.r (the rewards) are a list of arrays of different lengths
+            at the beginning, though with all elements as one since CartPole
+            provides one reward per timestep.  Later, for a solved setup, all
+            arrays should be of length 200.
+        (2)
+        (3)
+        (4)
+        (5)
+        
+        Returns
+        -------
+        fields: [list]
+            Giant list of tuples, with lots of relevant statistics. See comments.
+        """
 
         with util.Timer() as t_all:
-            # Sample trajectories using current policy
-            # print 'Sampling'
+            # Sample trajectories using current policy. If I want to modify the
+            # current data, I should do it here somehow.
+            # type(sampbatch) = policyopt.TrajBatch
+            # type(samp_pobsfeat) = policyopt.RaggedArray
             with util.Timer() as t_sample:
                 sampbatch = self.mdp.sim_mp(
                     policy_fn=lambda obsfeat_B_Df: self.policy.sample_actions(obsfeat_B_Df),
@@ -597,7 +702,6 @@ class ImitationOptimizer(object):
                 self.last_sampbatch = sampbatch
 
             # Compute baseline / advantages
-            # print 'Computing advantages'
             with util.Timer() as t_adv:
                 # Compute observation features for reward input
                 samp_robsfeat_stacked = self.reward_obsfeat_fn(sampbatch.obs.stacked)
@@ -625,7 +729,6 @@ class ImitationOptimizer(object):
                     rcurr, samp_pobsfeat, sampbatch.time, self.value_func, self.discount, self.lam)
 
             # Take a step
-            # print 'Fitting policy'
             with util.Timer() as t_step:
                 params0_P = self.policy.get_params()
                 step_print = self.step_func(
@@ -635,7 +738,6 @@ class ImitationOptimizer(object):
                 self.policy.update_obsnorm(samp_pobsfeat.stacked)
 
             # Fit reward function
-            # print 'Fitting reward'
             with util.Timer() as t_r_fit:
                 if True:#self.curr_iter % 20 == 0:
                     # Subsample expert transitions to the same sample count for the policy
@@ -649,7 +751,6 @@ class ImitationOptimizer(object):
                     rfit_print = []
 
             # Fit value function for next iteration
-            # print 'Fitting value function'
             with util.Timer() as t_vf_fit:
                 if self.value_func is not None:
                     # Recompute q vals # XXX: this is only necessary if fitting reward after policy

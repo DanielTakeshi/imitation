@@ -21,7 +21,42 @@ SIMPLE_ARCHITECTURE = '[{"type": "fc", "n": 100}, {"type": "nonlin", "func": "ta
 
 
 def load_dataset(filename, limit_trajs, data_subsamp_freq):
-    # Load expert data
+    """ Loads expert data for input to Behavioral Cloning, GAIL, etc.
+
+    Specifically, subsample based on input arguments, then stack everything so
+    that the leading dimension represents the number of stuff we have in each
+    resulting numpy array. The stacking means that the first few indices for the
+    states, actions, and times arrays are for the expert traj. indexed at 0,
+    then the next set of indices is for the expert traj. indexed at 1, etc.
+    
+    The subsampling happens at fixed intervals but at randomized starting states
+    for each trajectory. Thus, one trajectory with a subsampling interval of 10
+    may be chosen to start at 3, hence the states and actions we return will
+    include those at time step 3, 13, 23, etc., up to 193 if the max timesteps
+    is 200 (just an example). Use `start_times_B` to see the initial time.
+
+    Also:
+    - `exlen_B` is a list of B items (for B trajectories) containing the
+      *length* of each trajectory.
+    - `exr_B_T` is a (B,T) shaped numpy array (T = max timesteps) containing the
+      rewards obtained for each trajectory at each timestep. The raw reward,
+      that is, not the cumulative ones.
+
+    Returns
+    -------
+    exobs_Bstacked_Do: [numpy array]
+        Expert observation data, shape (B, obs_dim).
+    exa_Bstacked_Da: [numpy array]
+        Expert action data, shape (B, act_dim).
+    ext_Bstacked: [numpy array]
+        The subsampled time steps kept, of shape (B,). E.g. with two expert
+        trajectories, we'd concatenate two lists of length B1 and B2 with the
+        subsampled times chosen and return an array of shape (B1+B2,). In other
+        words, given a (s,a) pair, to find the timestep within its trajectory it
+        was in, we only need to find the corresponding element in this array.
+        The indexing is kept consistent with the states and actions arrays, i.e.
+        all three have leading dimension size B.
+    """
     with h5py.File(filename, 'r') as f:
         # Read data as written by vis_mj.py
         full_dset_size = f['obs_B_T_Do'].shape[0] # full dataset size
@@ -37,8 +72,7 @@ def load_dataset(filename, limit_trajs, data_subsamp_freq):
 
     # Stack everything together
     start_times_B = np.random.RandomState(0).randint(0, data_subsamp_freq, size=exlen_B.shape[0])
-    print 'start times' # Subsample every k-th, but want to start at random times.
-    print start_times_B
+    print('start times\n{}'.format(start_times_B))
     exobs_Bstacked_Do = np.concatenate(
         [exobs_B_T_Do[i,start_times_B[i]:l:data_subsamp_freq,:] for i, l in enumerate(exlen_B)],
         axis=0)
@@ -48,11 +82,10 @@ def load_dataset(filename, limit_trajs, data_subsamp_freq):
     ext_Bstacked = np.concatenate(
         [np.arange(start_times_B[i], l, step=data_subsamp_freq) for i, l in enumerate(exlen_B)]).astype(float)
 
-    assert exobs_Bstacked_Do.shape[0] == exa_Bstacked_Da.shape[0] == ext_Bstacked.shape[0]# == np.ceil(exlen_B.astype(float)/data_subsamp_freq).astype(int).sum() > 0
-
+    assert exobs_Bstacked_Do.shape[0] == exa_Bstacked_Da.shape[0] == ext_Bstacked.shape[0]
     print 'Subsampled data every {} timestep(s)'.format(data_subsamp_freq)
-    print 'Final dataset size: {} transitions (average {} per traj)'.format(exobs_Bstacked_Do.shape[0], float(exobs_Bstacked_Do.shape[0])/dset_size)
-
+    print 'Final dataset size: {} transitions (average {} per traj)'.format(
+            exobs_Bstacked_Do.shape[0], float(exobs_Bstacked_Do.shape[0])/dset_size)
     return exobs_Bstacked_Do, exa_Bstacked_Da, ext_Bstacked
 
 
@@ -175,7 +208,10 @@ def main():
 
     elif args.mode == 'ga':
         if args.reward_type == 'nn':
-            # FYI: this is the GAIL case.
+            # FYI: this is the GAIL case. Note that it doesn't take in any of
+            # the raw expert data, unlike the other reward types. And we call
+            # them `reward types` since the optimize can use their output in
+            # some way to impove itself.
             reward = imitation.TransitionClassifier(
                 hidden_spec=args.policy_hidden_spec,
                 obsfeat_space=mdp.obs_space,

@@ -12,7 +12,6 @@ class Space(object):
     @property
     def storage_type(self): raise NotImplementedError
 
-
 class FiniteSpace(Space):
     def __init__(self, size): self._size = size
     @property
@@ -21,7 +20,6 @@ class FiniteSpace(Space):
     def storage_type(self): return int
     @property
     def size(self): return self._size
-
 
 class ContinuousSpace(Space):
     def __init__(self, dim): self._dim = dim
@@ -34,6 +32,9 @@ class ContinuousSpace(Space):
 
 
 class Trajectory(object):
+    """ Encodes relevant information from a single trajectory: states, actions,
+    rewards. Use TrajBatch for a batch of these. """
+
     __slots__ = ('obs_T_Do', 'obsfeat_T_Df', 'adist_T_Pa', 'a_T_Da', 'r_T')
     def __init__(self, obs_T_Do, obsfeat_T_Df, adist_T_Pa, a_T_Da, r_T):
         assert (
@@ -68,7 +69,6 @@ class Trajectory(object):
 
 # Utilities for dealing with batches of trajectories with different lengths
 
-
 def raggedstack(arrays, fill=0., axis=0, raggedaxis=1):
     '''
     Stacks a list of arrays, like np.stack with axis=0.
@@ -94,6 +94,8 @@ def raggedstack(arrays, fill=0., axis=0, raggedaxis=1):
 
 
 class RaggedArray(object):
+    """ Helps us deal with list of arrays of different lengths. """
+
     def __init__(self, arrays, lengths=None):
         if lengths is None:
             # Without provided lengths, `arrays` is interpreted as a list of arrays
@@ -110,10 +112,13 @@ class RaggedArray(object):
         assert all(len(a) == l for a,l in util.safezip(self.arrays, self.lengths))
         self.boundaries = np.concatenate([[0], np.cumsum(self.lengths)])
         assert self.boundaries[-1] == len(self.stacked)
+
     def __len__(self):
         return len(self.lengths)
+
     def __getitem__(self, idx):
         return self.stacked[self.boundaries[idx]:self.boundaries[idx+1], ...]
+
     def padded(self, fill=0.):
         return raggedstack(self.arrays, fill=fill, axis=0, raggedaxis=1)
 
