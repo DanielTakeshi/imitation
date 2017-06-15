@@ -54,7 +54,11 @@ def main():
             task_df = df[df.task == task]
             
             # Handle the expert plots. They should be repeated across rows.
-            # TODO where did the 13 come from? I thought we had 50 ...
+            # Right now we have 10 (well, it's actually 13 ...) because we
+            # sampled 10 expert trajectories in phase 0. An alternative to doing
+            # this is to sample 50 expert trajectories in phase 0. However, note
+            # that we'll only consider the first 10 of those for any run/trial.
+
             experts = task_df['ex_traj_returns'].values
             for arr in experts[1:]:
                 assert np.sum(np.abs(arr - experts[0])) <= 1e-6
@@ -70,18 +74,25 @@ def main():
                 rew_std = []
 
                 for numtraj in unique_numtrajs:
+                    # I.e. a dataset size ("numtraj") of 1, 4, 7, or 10.
                     taskalgnum_df = taskalg_df[taskalg_df.num_trajs == numtraj]
+
+                    # ----------------------------------------------------------
                     # These are lists of numpy arrays of length equal to the
                     # number of runs we ran, which is 7 by default. The numpy
                     # arrays should be of length equal to the number of
-                    # trajectories we ran for evaluation, which is usually 50, 
-                    # but some values are oddly off ... such as 53 ?!?!?
+                    # trajectories we ran for evaluation, which *should* be 50,
+                    # but we're getting 52 or 53 for some reason ?!?!?  Also, I
+                    # assume we'll concatenate everything? Yeah, the appendix of
+                    # the GAIL paper implies this by saying that statistics are
+                    # "further computed" from 7 initializations.
+                    # ----------------------------------------------------------
+
                     alg_traj_lengths = taskalgnum_df['alg_traj_lengths'].values
                     alg_traj_returns = taskalgnum_df['alg_traj_returns'].values
-
-                    # TODO Temporary ... since this is the first of our 7 runs.
-                    rew_mean.append(np.mean(alg_traj_returns[0]))
-                    rew_std.append(np.std(alg_traj_returns[0]))
+                    concat_returns = np.concatenate([x for x in alg_traj_returns])
+                    rew_mean.append(concat_returns.mean())
+                    rew_std.append(concat_returns.std())
 
                 rew_mean = np.array(rew_mean)
                 rew_std = np.array(rew_std)

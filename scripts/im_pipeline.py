@@ -140,7 +140,17 @@ def phase0_sampletrajs(spec, specfilename):
     
     This *can* be done sequentially on one computer, no need to worry. This
     *will* save the .h5 files according to `storagedir` in the specs, so
-    manually remove if needed.
+    manually remove if needed. 
+    
+    This will sample `full_dataset_num_trajs` expert trajectories. I think it
+    might be better to have that value be perhaps 50, since then I can use those
+    values directly when plotting the expert performance alongside the
+    algorithms, to be consistent in getting 50 samples.
+    
+    Just note that sampling more than 10 trajectories (or whatever our limit is)
+    will **not** change the actual dataset, i.e. if we need 10 out of 20
+    trajectories, the `load_datasets` method will always load the first 10, and
+    not randomly pick 10 out of the 20.
     """
     util.header('=== Phase 0: Sampling trajs from expert policies ===')
     num_trajs = spec['training']['full_dataset_num_trajs']
@@ -162,12 +172,14 @@ def phase0_sampletrajs(spec, specfilename):
         avgr = trajbatch.r.stacked.mean()
         lengths = np.array([len(traj) for traj in trajbatch])
         ent = policy._compute_actiondist_entropy(trajbatch.adist.stacked).mean()
+        print 'returns.shape: {}'.format(returns.shape)
         print 'ret: {} +/- {}'.format(returns.mean(), returns.std())
         print 'avgr: {}'.format(avgr)
         print 'len: {} +/- {}'.format(lengths.mean(), lengths.std())
         print 'ent: {}'.format(ent)
 
-        # Save the trajs to a file (pad in case uneven lengths).
+        # Save the trajs to a file. Pad in case uneven lengths, but typically
+        # the experts last the full duration so the lengths will be equivalent.
         with h5py.File(taskname2outfile[task['name']], 'w') as f:
             def write(dsetname, a):
                 f.create_dataset(dsetname, data=a, compression='gzip', compression_opts=9)
@@ -286,6 +298,9 @@ def phase2_eval(spec, specfilename):
 
         # Load the task's traj dataset to see how well the expert does
         with h5py.File(taskname2dset[task['name']], 'r') as trajf:
+            print(taskname2dset[task['name']])
+            sys.exit()
+
             # Expert's true return and traj lengths
             ex_traj_returns = trajf['r_B_T'][...].sum(axis=1)
             ex_traj_lengths = trajf['len_B'][...]
@@ -348,18 +363,18 @@ def main():
     Here's what I've run so far:
 
         Classic
-    (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 0_sampletrajs
-    (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 1_train
-    (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 2_eval
+    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 1_train
+    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 2_eval
 
         Other MuJoCo
-    (success) python scripts/im_pipeline.py pipelines/im_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_pipeline.yaml 0_sampletrajs
 
         Reacher
-    (success) python scripts/im_pipeline.py pipelines/im_regtest_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_regtest_pipeline.yaml 0_sampletrajs
 
         Humanoid
-    (success) python scripts/im_pipeline.py pipelines/im_humanoid_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_humanoid_pipeline.yaml 0_sampletrajs
 
     After the third script, you'll get a *single* `results.h5` file with the
     results in it.

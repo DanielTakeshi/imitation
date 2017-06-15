@@ -15,7 +15,7 @@ tasks:
 
 
 training:
-  full_dataset_num_trajs: 10
+  full_dataset_num_trajs: 50
   dataset_num_trajs: [1, 4, 7, 10]
   deterministic_expert: false
   runs: 7

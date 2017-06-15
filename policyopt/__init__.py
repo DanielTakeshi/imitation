@@ -272,6 +272,7 @@ class MDP(object):
     def new_batched_sim(self, batch_size):
         return SequentialBatchedSim(self, batch_size)
 
+
     def sim_single(self, policy_fn, obsfeat_fn, max_traj_len, init_state=None):
         '''Simulate a single trajectory'''
         sim = self.new_sim(init_state=init_state)
@@ -290,6 +291,7 @@ class MDP(object):
         a_T_Da = np.concatenate(actions); assert a_T_Da.shape == (len(obs), self.action_space.storage_size)
         r_T = np.asarray(rewards); assert r_T.shape == (len(obs),)
         return Trajectory(obs_T_Do, obsfeat_T_Df, adist_T_Pa, a_T_Da, r_T)
+
 
     # @profile
     def sim_multi(self, policy_fn, obsfeat_fn, cfg, num_threads=None, no_reward=False):
@@ -363,11 +365,18 @@ class MDP(object):
         assert len(completed_trajs) >= cfg.min_num_trajs and sum(len(traj) for traj in completed_trajs) >= cfg.min_total_sa
         return TrajBatch.FromTrajs(completed_trajs)
 
+
     def sim_mp(self, policy_fn, obsfeat_fn, cfg, maxtasksperchild=200):
-        '''
+        """
         Multiprocessed simulation
         Not thread safe! But why would you want this to be thread safe anyway?
-        '''
+
+        (Daniel: I don't understand Jonathan Ho's comment ... but I understand
+        this: if we say that we want to generate 10 trajectories or so, we will
+        actually return some value like 12 or 13, because this runs using
+        multiprocessing. All we require is that we get *at least* our desired
+        trajectory count, along with a states/actions threshold.)
+        """
         num_processes = cfg.batch_size if cfg.batch_size is not None else multiprocessing.cpu_count()//2
 
         # Bypass multiprocessing if only using one process
@@ -414,6 +423,7 @@ class MDP(object):
 
         assert len(trajs) >= cfg.min_num_trajs and sum(len(traj) for traj in trajs) >= cfg.min_total_sa
         return TrajBatch.FromTrajs(trajs)
+
 
 _global_sim_info = None
 def _rollout():

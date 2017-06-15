@@ -42,6 +42,23 @@ def load_dataset(filename, limit_trajs, data_subsamp_freq):
       rewards obtained for each trajectory at each timestep. The raw reward,
       that is, not the cumulative ones.
 
+    Parameters
+    ----------
+    filename: [string]
+        The path to the .h5 file containing the expert trajectories from phase 0
+        of the starting pipeline.
+    limit_trajs: [int]
+        The amount of trajectories in our dataset, typically 1, 4, 7, or 10.
+        Note that we always take the *FIRST* few of these, i.e. each of the 7
+        'runs' (well, 7 is the default from the GitHub...) uses the *same* set
+        of expert trajectories. This is the `[:dset_size,...][...]` part of the
+        code. This means there is in practice no diversity or benefit from
+        sampling more than 10 initial expert trajectories.
+    data_subsamp_freq: [int]
+        How often we subsample, specified in the original .yaml files. We
+        subsample at *fixed* intervals, though starting from a random *initial*
+        point.
+
     Returns
     -------
     exobs_Bstacked_Do: [numpy array]
