@@ -8,88 +8,6 @@ import os, os.path, shutil
 from policyopt import util
 import subprocess, tempfile, datetime
 
-# PBS
-def create_pbs_script(commands, outputfiles, jobname, queue, nodes, ppn):
-    assert len(commands) == len(outputfiles)
-    template = '''#!/bin/bash
-
-#PBS -l walltime=72:00:00,nodes={nodes}:ppn={ppn},mem=10gb
-#PBS -N {jobname}
-#PBS -q {queue}
-#PBS -o /dev/null
-#PBS -e /dev/null
-
-sleep $[ ( $RANDOM % 120 ) + 1 ]s
-
-read -r -d '' COMMANDS << END
-{cmds_str}
-END
-cmd=$(echo "$COMMANDS" | awk "NR == $PBS_ARRAYID")
-echo $cmd
-
-read -r -d '' OUTPUTFILES << END
-{outputfiles_str}
-END
-outputfile=$PBS_O_WORKDIR/$(echo "$OUTPUTFILES" | awk "NR == $PBS_ARRAYID")
-echo $outputfile
-# Make sure output directory exists
-mkdir -p "`dirname \"$outputfile\"`" 2>/dev/null
-
-cd $PBS_O_WORKDIR
-
-echo $cmd >$outputfile
-eval $cmd >>$outputfile 2>&1
-'''
-    return template.format(
-        jobname=jobname,
-        queue=queue,
-        cmds_str='\n'.join(commands),
-        outputfiles_str='\n'.join(outputfiles),
-        nodes=nodes,
-        ppn=ppn)
-
-
-def runpbs(cmd_templates, outputfilenames, argdicts, jobname, queue, nodes, ppn, job_range=None, outputfile_dir=None, qsub_script_copy=None):
-    assert len(cmd_templates) == len(outputfilenames) == len(argdicts)
-    num_cmds = len(cmd_templates)
-
-    outputfile_dir = outputfile_dir if outputfile_dir is not None else 'logs_%s_%s' % (jobname, datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S'))
-
-    cmds, outputfiles = [], []
-    for i in range(num_cmds):
-        cmds.append(cmd_templates[i].format(**argdicts[i]))
-        outputfiles.append(os.path.join(outputfile_dir, '{:04d}_{}'.format(i+1, outputfilenames[i])))
-
-    script = create_pbs_script(cmds, outputfiles, jobname, queue, nodes, ppn)
-    print script
-    with tempfile.NamedTemporaryFile(suffix='.sh') as f:
-        f.write(script)
-        f.flush()
-
-        if job_range is not None:
-            assert len(job_range.split('-')) == 2, 'Invalid job range'
-            cmd = 'qsub -t %s %s' % (job_range, f.name)
-        else:
-            cmd = 'qsub -t %d-%d %s' % (1, len(cmds), f.name)
-
-        print 'Running command:', cmd
-        print 'ok ({} jobs)? y/n'.format(num_cmds)
-        if raw_input() == 'y':
-            # Write a copy of the script
-            if qsub_script_copy is not None:
-                assert not os.path.exists(qsub_script_copy)
-                with open(qsub_script_copy, 'w') as fcopy:
-                    fcopy.write(script)
-                print 'qsub script written to {}'.format(qsub_script_copy)
-            # Run qsub
-            subprocess.check_call(cmd, shell=True)
-
-        else:
-            raise RuntimeError('Canceled.')
-
-### -----------------------------------------------------------------
-### Daniel: ignoring the two methods above since I do it sequentially
-### -----------------------------------------------------------------
 
 def load_trained_policy_and_mdp(env_name, policy_state_str):
     """ Creates the specialized MDP and policy objects needed to sample expert
@@ -202,6 +120,8 @@ def exec_saved_policy(env_name, policystr, num_trajs, deterministic, max_traj_le
 
 
 def eval_snapshot(env_name, checkptfile, snapshot_idx, num_trajs, deterministic):
+    """ Called during evaluation stage, prints results on screen and returns
+    data which we save in a results `.h5` file. """
     policystr = '{}/snapshots/iter{:07d}'.format(checkptfile, snapshot_idx)
     trajbatch, _, _ = exec_saved_policy(
         env_name,
@@ -307,48 +227,28 @@ def phase1_train(spec, specfilename):
                         'out': os.path.join(checkptdir, strid + '.h5'),
                     })
 
-    # New, put all this in a correct list and call them from Python.
+    # (New code from Daniel) Put commands in a list and run them sequentially.
     all_commands = [x.format(**y) for (x,y) in zip(cmd_templates,argdicts)]
-    #all_commands = all_commands[:7]  # temporary
     print("Total number of commands to run: {}.".format(len(all_commands)))
-
-    # Old code from Jonathan Ho, definitely delete
-    ## pbsopts = spec['options']['pbs']
-    ## runpbs(
-    ##     cmd_templates, outputfilenames, argdicts,
-    ##     jobname=pbsopts['jobname'], queue=pbsopts['queue'], nodes=1, ppn=pbsopts['ppn'],
-    ##     job_range=pbsopts['range'] if 'range' in pbsopts else None,
-    ##     qsub_script_copy=os.path.join(checkptdir, 'qsub_script.sh')
-    ## )
-
-    # Old code from Jonathan Ho (delete?)
-    # Copy the pipeline yaml file to the output dir too
-    shutil.copyfile(specfilename, os.path.join(checkptdir, 'pipeline.yaml'))
-
-    # Old code from Jonathan Ho (delete?)
-    # Keep git commit
-    import subprocess
-    git_hash = subprocess.check_output('git rev-parse HEAD', shell=True).strip()
-    with open(os.path.join(checkptdir, 'git_hash.txt'), 'w') as f:
-        f.write(git_hash + '\n')
-
-    # (New code from Daniel) Let's actually run the commands from earlier.
     for command in all_commands:
-        print("\nabout to run this command:\n{}\n".format(command))
         subprocess.call(command.split(" "))
 
 
 def phase2_eval(spec, specfilename):
-    """
+    """ Evaluates results from a given set of experiments, specified in the
+    .yaml files.
 
+    This is all saved into `results.h5`, which one should then probably
+    rename and move somewhere else to save. Also, you'll need to figure out how
+    to plot from those files.
     """
     util.header('=== Phase 2: evaluating trained models ===')
     import pandas as pd
 
     taskname2dset = gen_taskname2outfile(spec)
 
-    # This is where model logs are stored.
-    # We will also store the evaluation here.
+    # This is where model logs are stored.  We will also store the evaluation
+    # here, from `results_filename`.
     checkptdir = os.path.join(spec['options']['storagedir'], spec['options']['checkpt_subdir'])
     print 'Evaluating results in {}'.format(checkptdir)
 
@@ -449,8 +349,8 @@ def main():
 
         Classic
     (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 0_sampletrajs
-    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 1_train
-    python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 2_eval
+    (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 1_train
+    (success) python scripts/im_pipeline.py pipelines/im_classic_pipeline.yaml 2_eval
 
         Other MuJoCo
     (success) python scripts/im_pipeline.py pipelines/im_pipeline.yaml 0_sampletrajs
@@ -461,11 +361,29 @@ def main():
         Humanoid
     (success) python scripts/im_pipeline.py pipelines/im_humanoid_pipeline.yaml 0_sampletrajs
 
+    After the third script, you'll get a *single* `results.h5` file with the
+    results in it.
+
     What's interesting is that some of the mujoco environments use a simpler
     network, just one hidden layer with 50 units and ReLUs. Why? Also, the other
     architectures here use two hidden layers with tanhs, as described in the
     paper but with 64 units instead of 100. I think I better double check what
     network options we have.
+
+    Note: I ran into some problems with GNU screen so I had to prepend:
+
+        screen env LD_LIBRARY_PATH=$LD_LIBRARY_PATH python scripts/im_pipeline (...)
+
+    This will convert to screen mode, make sure it's using the correct
+    environment variables, and then the python code can run after that.
+    https://stackoverflow.com/questions/34779638/tensorflow-gnu-screen-for-ipython-causes-import-error
+
+    If you want to *plot* these results, one way is to do the following:
+
+    python scripts/showlog.py imitation_runs/classic/checkpoints/alg\=ga\,task\=cartpole\,num_trajs\=10\,run\=0.h5
+
+    This will make several plots for that log file. However, to get a plot like
+    the one in the GAIL paper, I need to make a new script.
     """
     np.set_printoptions(suppress=True, precision=5, linewidth=1000)
 
