@@ -369,9 +369,11 @@ def main():
 
         Other MuJoCo
     python scripts/im_pipeline.py pipelines/im_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_pipeline.yaml 1_train
 
         Reacher
     python scripts/im_pipeline.py pipelines/im_regtest_pipeline.yaml 0_sampletrajs
+    python scripts/im_pipeline.py pipelines/im_regtest_pipeline.yaml 1_train
 
         Humanoid
     python scripts/im_pipeline.py pipelines/im_humanoid_pipeline.yaml 0_sampletrajs

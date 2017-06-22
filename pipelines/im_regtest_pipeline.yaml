@@ -15,66 +15,6 @@ training:
   runs: 7
 
   algorithms:
-    # Behavioral cloning
-    - name: bclone
-      cmd: >
-        python scripts/imitate_mj.py --mode bclone
-        --env {env}
-        --data {dataset}
-        --limit_trajs {num_trajs}
-        --data_subsamp_freq {data_subsamp_freq}
-        --max_iter 10001
-        --bclone_eval_freq 500
-        --sim_batch_size 1
-        --log {out}
-
-    # Generative adversarial imitation learning
-    - name: ga_entreg0
-      cmd: >
-        python scripts/imitate_mj.py --mode ga
-        --env {env}
-        --data {dataset}
-        --limit_trajs {num_trajs}
-        --data_subsamp_freq {data_subsamp_freq}
-        --favor_zero_expert_reward {cuts_off_on_success}
-        --min_total_sa 50000
-        --max_iter 201
-        --reward_include_time 0
-        --reward_lr .01
-        --log {out}
-
-    # Generative adversarial imitation learning
-    - name: ga_entreg-1
-      cmd: >
-        python scripts/imitate_mj.py --mode ga
-        --env {env}
-        --data {dataset}
-        --limit_trajs {num_trajs}
-        --data_subsamp_freq {data_subsamp_freq}
-        --favor_zero_expert_reward {cuts_off_on_success}
-        --min_total_sa 50000
-        --max_iter 201
-        --reward_include_time 0
-        --reward_lr .01
-        --policy_ent_reg .1
-        --log {out}
-
-    # Generative adversarial imitation learning
-    - name: ga_entreg-2
-      cmd: >
-        python scripts/imitate_mj.py --mode ga
-        --env {env}
-        --data {dataset}
-        --limit_trajs {num_trajs}
-        --data_subsamp_freq {data_subsamp_freq}
-        --favor_zero_expert_reward {cuts_off_on_success}
-        --min_total_sa 50000
-        --max_iter 201
-        --reward_include_time 0
-        --reward_lr .01
-        --policy_ent_reg .01
-        --log {out}
-
     # Generative adversarial imitation learning
     - name: ga_entreg-3
       cmd: >
@@ -90,7 +30,6 @@ training:
         --reward_lr .01
         --policy_ent_reg .001
         --log {out}
-
 
 options:
   storagedir: imitation_runs/modern_entreg

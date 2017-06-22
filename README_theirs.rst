@@ -19,3 +19,5 @@ Provided files:
 * ``scripts/im_pipeline.py`` is the main training and evaluation pipeline. This script is responsible for sampling data from experts to generate training data, running the training code (``scripts/imitate_mj.py``), and evaluating the resulting policies.
 * ``pipelines/*`` are the experiment specifications provided to ``scripts/im_pipeline.py``
 * ``results/*`` contain evaluation data for the learned policies
+
+
