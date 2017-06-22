@@ -1,6 +1,12 @@
 """
 Attempting to make this return a similar plot as in the GAIL paper, Figure 1,
-and also to return a table with results.
+and also to return a table with results. You need to supply a results file.
+Example:
+
+    python scripts/plot_results.py imitation_runs/classic/checkpoints/results.h5
+
+Note that this will (unless we're using Humanoid) contain more than one task for
+us to parse through.
 
 (c) June 2017 by Daniel Seita
 """
@@ -27,10 +33,23 @@ ms = 12
 mew = 5
 error_region_alpha = 0.25
 
-task_to_name = {'cartpole': 'CartPole-v0',
-                'mountaincar': 'MountainCar-v0'}
-task_to_random = {'cartpole': 20.08,
-                  'mountaincar': -200.0}
+# Meh, a bit of manual stuff.
+task_to_name = {'cartpole':    'CartPole-v0',
+                'mountaincar': 'MountainCar-v0',
+                'hopper':      'Hopper-v1',
+                'walker':      'Walker2d-v1',
+                'ant':         'Ant-v1',
+                'halfcheetah': 'HalfCheetah-v1',
+                'humanoid':    'Humanoid-v1',
+                'reacher':     'Reacher-v1'}
+task_to_random = {'cartpole':     20.08,
+                  'mountaincar': -200.0,
+                  'hopper':        16.0,
+                  'walker':         0.7,
+                  'ant':          -39.4,
+                  'halfcheetah': -283.4,
+                  'humanoid':     127.0,
+                  'reacher':      -44.1}
 colors = {'red', 'blue', 'yellow', 'black'}
 
 
@@ -53,11 +72,15 @@ def main():
             print("\nPlotting for task/env = {}".format(task_to_name[task]))
             task_df = df[df.task == task]
             
+            # ------------------------------------------------------------------
             # Handle the expert plots. They should be repeated across rows.
-            # Right now we have 10 (well, it's actually 13 ...) because we
-            # sampled 10 expert trajectories in phase 0. An alternative to doing
-            # this is to sample 50 expert trajectories in phase 0. However, note
-            # that we'll only consider the first 10 of those for any run/trial.
+            # Right now we have 50 (well, 52 or 53...) except for Humanoid,
+            # which has more. I changed the scripts to run 50 expert
+            # trajectories so we can get 50 and not 10, as I had before.
+            # However, note that we'll only consider the first 10 of those for
+            # any run/trial, i.e. with the classic ones that had 1, 4, 7, and 10
+            # expert trajectories in the data, we only used the first 10.
+            # ------------------------------------------------------------------
 
             experts = task_df['ex_traj_returns'].values
             for arr in experts[1:]:
@@ -65,8 +88,8 @@ def main():
             print("expert mean: {} and std: {} and length: {}".format(
                 experts[0].mean(), experts[0].std(), len(experts[0])))
             fig = plt.figure(figsize=(10,8))
-            plt.axhline(experts[0].mean(), color='gray', label='Expert')
-            plt.axhline(task_to_random[task], color='lightblue', label='Random')
+            plt.axhline(experts[0].mean(), color='gray', lw=2, label='Expert')
+            plt.axhline(task_to_random[task], color='lightblue', lw=2, label='Random')
 
             for (c,alg) in zip(colors,unique_algs):
                 taskalg_df = task_df[task_df.alg == alg]
@@ -82,10 +105,11 @@ def main():
                     # number of runs we ran, which is 7 by default. The numpy
                     # arrays should be of length equal to the number of
                     # trajectories we ran for evaluation, which *should* be 50,
-                    # but we're getting 52 or 53 for some reason ?!?!?  Also, I
-                    # assume we'll concatenate everything? Yeah, the appendix of
-                    # the GAIL paper implies this by saying that statistics are
-                    # "further computed" from 7 initializations.
+                    # but we're getting 52 or 53 for some reason, my guess is
+                    # due to multithreading stuff. Also, I assume we'll
+                    # concatenate everything. The appendix of the GAIL paper
+                    # implies this by saying that statistics are "further
+                    # computed" from 7 initializations.
                     # ----------------------------------------------------------
 
                     alg_traj_lengths = taskalgnum_df['alg_traj_lengths'].values

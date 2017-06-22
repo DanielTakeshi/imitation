@@ -298,9 +298,6 @@ def phase2_eval(spec, specfilename):
 
         # Load the task's traj dataset to see how well the expert does
         with h5py.File(taskname2dset[task['name']], 'r') as trajf:
-            print(taskname2dset[task['name']])
-            sys.exit()
-
             # Expert's true return and traj lengths
             ex_traj_returns = trajf['r_B_T'][...].sum(axis=1)
             ex_traj_lengths = trajf['len_B'][...]
