@@ -131,7 +131,7 @@ def main():
             plt.title(task_to_name[task], fontsize=title_size)
             plt.xlabel("Number of Trajectories", fontsize=ysize)
             plt.ylabel("Scores", fontsize=xsize)
-            plt.legend(loc='lower right', prop={'size':legend_size})
+            plt.legend(loc='lower right', ncol=2, prop={'size':legend_size})
             plt.tick_params(axis='x', labelsize=tick_size)
             plt.tick_params(axis='y', labelsize=tick_size)
             plt.tight_layout()
